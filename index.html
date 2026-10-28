@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Web Security Configuration Auditor</title>
+<meta name="description" content="A Python tool that checks a website’s security headers, cookies, CORS policy, and TLS setup, then explains how to fix what it finds.">
+<meta name="theme-color" content="#060a08">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='16' fill='%23060a08'/%3E%3Ctext x='50' y='68' font-size='56' text-anchor='middle' fill='%2339ff88' font-family='monospace'%3E%3E_%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main>
+
+<h1>Web Security Configuration Auditor</h1>
+<p class="lede">A Python tool that inspects how a website is set up to protect its visitors, then lists every weakness it finds with a plain-English fix.</p>
+<div class="actions">
+  <a class="btn primary" href="https://github.com/Simonxy11/Web-Security-Auditor">View the code on GitHub</a>
+  <a class="btn" href="#run">Run it yourself</a>
+</div>
+
+<section class="term" aria-label="Sample scan output">
+  <div class="bar" aria-hidden="true"><i></i><i></i><i></i><span>audit.py: sample scan of a deliberately misconfigured test server</span></div>
+  <div class="screen">
+    <div class="row"><span class="prompt">$</span> <span id="cmd" data-text="python3 audit.py http://127.0.0.1:8099">python3 audit.py http://127.0.0.1:8099</span><span class="cursor" aria-hidden="true"></span></div>
+    <div class="row warn" data-line>[!] Only scan systems you own or are authorized to test.</div>
+    <div class="row dim" data-line>Summary: 1 High, 2 Medium, 6 Low, 1 Info (select a finding for the fix)</div>
+
+    <details data-line>
+      <summary><span class="sev high">[HIGH]</span><span>CORS reflects arbitrary Origin with credentials allowed</span></summary>
+      <div class="detail">
+        <p><b>Why it matters:</b> Any website can make requests as a logged-in visitor and read the answers back. Private data could be exposed.</p>
+        <p><b>Fix:</b> Compare the Origin against an explicit allowlist. Never echo it back when credentials are enabled.</p>
+        <p>OWASP A01:2021 Broken Access Control</p>
+      </div>
+    </details>
+    <details data-line>
+      <summary><span class="sev med">[MED]</span><span>Missing header: Content-Security-Policy</span></summary>
+      <div class="detail">
+        <p><b>Why it matters:</b> Without a policy, the browser has no rules about where scripts may load from, so a cross-site scripting bug does more damage.</p>
+        <p><b>Fix:</b> Send a restrictive policy such as <code>default-src 'self'</code>, then tighten it per resource type.</p>
+        <p>OWASP A05:2021 Security Misconfiguration</p>
+      </div>
+    </details>
+    <details data-line>
+      <summary><span class="sev med">[MED]</span><span>Cookie “PHPSESSID” missing HttpOnly flag</span></summary>
+      <div class="detail">
+        <p><b>Why it matters:</b> JavaScript on the page can read the cookie, so one injected script can steal the session.</p>
+        <p><b>Fix:</b> Add the HttpOnly attribute to session cookies.</p>
+        <p>OWASP A05:2021 Security Misconfiguration</p>
+      </div>
+    </details>
+    <details data-line>
+      <summary><span class="sev low">[LOW]</span><span>Missing header: X-Content-Type-Options</span></summary>
+      <div class="detail">
+        <p><b>Why it matters:</b> Browsers may guess a file’s type instead of trusting the server, which can turn harmless files into executable ones.</p>
+        <p><b>Fix:</b> Send <code>X-Content-Type-Options: nosniff</code>.</p>
+      </div>
+    </details>
+    <details data-line>
+      <summary><span class="sev low">[LOW]</span><span>Missing header: X-Frame-Options</span></summary>
+      <div class="detail">
+        <p><b>Why it matters:</b> Other sites can embed the page in a hidden frame and trick visitors into clicking (clickjacking).</p>
+        <p><b>Fix:</b> Send <code>X-Frame-Options: DENY</code>, or use the CSP frame-ancestors directive.</p>
+      </div>
+    </details>
+    <details data-line>
+      <summary><span class="sev low">[LOW]</span><span>Missing header: Referrer-Policy</span></summary>
+      <div class="detail">
+        <p><b>Why it matters:</b> Full page addresses, sometimes holding IDs or tokens, can leak to other sites.</p>
+        <p><b>Fix:</b> Send <code>Referrer-Policy: strict-origin-when-cross-origin</code> or stricter.</p>
+      </div>
+    </details>
+    <details data-line>
+      <summary><span class="sev low">[LOW]</span><span>Information disclosure: Server: Apache/2.4.29 (Ubuntu)</span></summary>
+      <div class="detail">
+        <p><b>Why it matters:</b> Exact version numbers let an attacker look up known exploits for that release.</p>
+        <p><b>Fix:</b> Remove or genericize the Server header in the web server configuration.</p>
+      </div>
+    </details>
+    <details data-line>
+      <summary><span class="sev low">[LOW]</span><span>Information disclosure: X-Powered-By: PHP/5.6.40</span></summary>
+      <div class="detail">
+        <p><b>Why it matters:</b> It reveals the language and version behind the site, and this PHP release is long out of support.</p>
+        <p><b>Fix:</b> Disable the header (in PHP, set <code>expose_php = Off</code>) and upgrade.</p>
+      </div>
+    </details>
+    <details data-line>
+      <summary><span class="sev low">[LOW]</span><span>Cookie “PHPSESSID” missing SameSite attribute</span></summary>
+      <div class="detail">
+        <p><b>Why it matters:</b> The cookie is sent on requests started from other sites, which helps cross-site request forgery.</p>
+        <p><b>Fix:</b> Set <code>SameSite=Lax</code> or <code>Strict</code>, and use anti-CSRF tokens on state-changing requests.</p>
+      </div>
+    </details>
+    <details data-line>
+      <summary><span class="sev info">[INFO]</span><span>Missing header: Permissions-Policy</span></summary>
+      <div class="detail">
+        <p><b>Why it matters:</b> Browser features such as camera and location aren’t explicitly restricted.</p>
+        <p><b>Fix:</b> Send a Permissions-Policy header that turns off features the site doesn’t use.</p>
+      </div>
+    </details>
+
+    <div class="row result" data-line><b>Done.</b> 10 findings, sorted from most to least severe.</div>
+  </div>
+</section>
+<p class="note">The same scan of a hardened test server returned a single Low finding.</p>
+
+<h2>ls checks/</h2>
+<dl>
+  <dt>security-headers/</dt>
+  <dd>Whether the site tells browsers to apply protections: content security policy, HSTS, clickjacking and MIME-sniffing defenses, referrer and permissions policies.</dd>
+  <dt>cookies/</dt>
+  <dd>Whether each cookie carries the Secure, HttpOnly, and SameSite flags.</dd>
+  <dt>cors/</dt>
+  <dd>Whether the site lets untrusted origins read its responses, especially while logged in.</dd>
+  <dt>encryption/</dt>
+  <dd>TLS version, certificate validity and expiry, and whether plain HTTP redirects to HTTPS.</dd>
+  <dt>info-leaks/</dt>
+  <dd>Headers that reveal software names and version numbers.</dd>
+</dl>
+<p>Every finding is tagged with its OWASP Top 10 (2021) category.</p>
+
+<h2 id="run">./run.sh</h2>
+<ol>
+  <li><strong>Get the code.</strong> Python 3 is the only requirement. There is nothing to install.
+<pre>git clone https://github.com/Simonxy11/Web-Security-Auditor.git
+cd Web-Security-Auditor</pre></li>
+  <li><strong>Scan a site you own or have permission to test.</strong>
+<pre>python3 audit.py https://your-site.example</pre></li>
+  <li><strong>Save the report</strong> as Markdown or JSON.
+<pre>python3 audit.py https://your-site.example -o report.md
+python3 audit.py https://your-site.example --format json -o report.json</pre></li>
+</ol>
+
+<div class="callout">
+  <p><strong>Authorized use only.</strong> The tool sends ordinary requests and no attack payloads, but scanning systems you don’t own or have written permission to test can still be illegal. A local copy of OWASP Juice Shop is a safe place to practice.</p>
+</div>
+
+<h2>cat LIMITS.txt</h2>
+<ul class="plain">
+  <li><b>It checks configuration, not code.</b> It won’t find SQL injection or other flaws inside an application.</li>
+  <li><b>It looks at one page.</b> A full assessment would crawl the whole site.</li>
+  <li><b>It has been tested on local servers only:</b> a misconfigured one, a hardened one, and an HTTPS server with a self-signed certificate.</li>
+</ul>
+
+<footer>
+  <p>Built in Python using only the standard library, by Simon Solomon. Source on <a href="https://github.com/Simonxy11/Web-Security-Auditor">GitHub</a>.</p>
+</footer>
+
+</main>
+<script src="script.js"></script>
+</body>
+</html>
