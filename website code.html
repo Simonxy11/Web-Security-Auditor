@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Web Security Auditor</title>
+<meta name="description" content="A passive Python web security auditor that maps HTTP findings to the OWASP Top 10 (2021).">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #020403;
+    --green: #00ff66;
+    --green-dim: #0a8f3e;
+    --green-faint: rgba(0, 255, 102, 0.08);
+    --text: #c8ffd9;
+    --muted: #6fa883;
+    --red: #ff3b5c;
+    --amber: #ffc23b;
+    --panel: rgba(2, 10, 5, 0.82);
+    --border: rgba(0, 255, 102, 0.28);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'JetBrains Mono', ui-monospace, Menlo, Consolas, monospace;
+    line-height: 1.6;
+    overflow-x: hidden;
+  }
+
+  /* ---------- moving code background ---------- */
+  #rain {
+    position: fixed; inset: 0;
+    width: 100%; height: 100%;
+    z-index: 0;
+  }
+  .scanlines {
+    position: fixed; inset: 0; z-index: 1; pointer-events: none;
+    background: repeating-linear-gradient(to bottom, transparent 0 2px, rgba(0,0,0,0.25) 2px 3px);
+  }
+  .vignette {
+    position: fixed; inset: 0; z-index: 1; pointer-events: none;
+    background: radial-gradient(ellipse at center, transparent 35%, rgba(0,0,0,0.85) 100%);
+  }
+  main { position: relative; z-index: 2; }
+
+  /* ---------- nav ---------- */
+  nav {
+    position: sticky; top: 0; z-index: 10;
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 14px clamp(16px, 4vw, 48px);
+    background: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(6px);
+    border-bottom: 1px solid var(--border);
+  }
+  .logo { color: var(--green); font-weight: 800; letter-spacing: 1px; text-decoration: none; }
+  .logo span { animation: blink 1s steps(1) infinite; }
+  nav ul { list-style: none; display: flex; gap: clamp(12px, 3vw, 28px); }
+  nav a { color: var(--muted); text-decoration: none; font-size: 14px; }
+  nav a:hover { color: var(--green); text-shadow: 0 0 8px var(--green); }
+
+  /* ---------- hero ---------- */
+  .hero {
+    min-height: calc(100vh - 56px);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    padding: 40px clamp(16px, 5vw, 72px);
+    max-width: 1000px; margin: 0 auto;
+  }
+  .hero .lede { margin-left: auto; margin-right: auto; max-width: 640px; }
+  .hero .btns { justify-content: center; }
+  .hero > div {
+    padding: clamp(24px, 4vw, 48px);
+    background: radial-gradient(ellipse at center, rgba(0,0,0,.75) 40%, transparent 75%);
+  }
+  .tag {
+    display: inline-block; font-size: 12px; color: var(--green);
+    border: 1px solid var(--border); padding: 4px 10px; margin-bottom: 20px;
+    background: var(--green-faint);
+  }
+  h1 {
+    font-size: clamp(34px, 6vw, 68px); line-height: 1.05; font-weight: 800;
+    color: #eafff1; text-shadow: 0 0 18px rgba(0,255,102,0.45);
+    position: relative;
+  }
+  h1 .accent { color: var(--green); }
+  .glitch { position: relative; display: inline-block; }
+  .glitch::before, .glitch::after {
+    content: attr(data-text); position: absolute; left: 0; top: 0; width: 100%;
+    overflow: hidden; opacity: 0.8;
+  }
+  .glitch::before { color: #ff2a6d; animation: glitchA 3.2s infinite linear alternate-reverse; }
+  .glitch::after  { color: #05d9e8; animation: glitchB 2.7s infinite linear alternate-reverse; }
+  .lede { margin: 22px 0 30px; color: var(--muted); max-width: 520px; font-size: 16px; }
+  .lede b { color: var(--text); }
+  .btns { display: flex; flex-wrap: wrap; gap: 14px; }
+  .btn {
+    padding: 12px 22px; font-family: inherit; font-weight: 600; font-size: 14px;
+    text-decoration: none; border: 1px solid var(--green); transition: all .2s;
+  }
+  .btn.primary { background: var(--green); color: #001a0a; box-shadow: 0 0 20px rgba(0,255,102,.5); }
+  .btn.primary:hover { box-shadow: 0 0 36px rgba(0,255,102,.9); }
+  .btn.ghost { color: var(--green); background: rgba(0,0,0,.5); }
+  .btn.ghost:hover { background: var(--green-faint); }
+
+  /* ---------- sections ---------- */
+  section.block { max-width: 1100px; margin: 0 auto; padding: 80px clamp(16px, 5vw, 48px); }
+  h2 { font-size: clamp(24px, 3.5vw, 34px); color: #eafff1; margin-bottom: 8px; }
+  h2::before { content: "> "; color: var(--green); }
+  .sub { color: var(--muted); margin-bottom: 32px; }
+
+  .panel {
+    background: var(--panel); border: 1px solid var(--border);
+    box-shadow: 0 0 40px rgba(0,255,102,.07), inset 0 0 30px rgba(0,255,102,.03);
+  }
+
+  /* terminal */
+  .term-bar {
+    display: flex; align-items: center; gap: 8px; padding: 10px 14px;
+    border-bottom: 1px solid var(--border); font-size: 12px; color: var(--muted);
+  }
+  .dot { width: 11px; height: 11px; border-radius: 50%; }
+  .term-body {
+    padding: 18px 20px; font-size: 13.5px; min-height: 380px;
+    white-space: pre-wrap; word-break: break-word;
+  }
+  .t-prompt { color: var(--green); }
+  .t-high { color: var(--red); font-weight: 600; }
+  .t-med  { color: var(--amber); font-weight: 600; }
+  .t-low  { color: #6fd3ff; font-weight: 600; }
+  .t-ok   { color: var(--green); }
+  .t-dim  { color: var(--muted); }
+  .cursor { display: inline-block; width: 9px; height: 1.1em; background: var(--green); vertical-align: text-bottom; animation: blink 1s steps(1) infinite; }
+
+  /* checks grid */
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 18px; }
+  .card { padding: 22px; transition: transform .2s, border-color .2s; }
+  .card:hover { transform: translateY(-4px); border-color: var(--green); }
+  .card .owasp { font-size: 11px; color: var(--green); border: 1px solid var(--border); padding: 2px 8px; display: inline-block; margin-bottom: 12px; }
+  .card h3 { color: #eafff1; font-size: 17px; margin-bottom: 8px; }
+  .card p { color: var(--muted); font-size: 13.5px; }
+
+  /* usage */
+  pre.code {
+    padding: 20px; overflow-x: auto; font-size: 14px; color: var(--text);
+  }
+  pre.code .c { color: var(--muted); }
+  pre.code .p { color: var(--green); user-select: none; }
+
+  .notes { list-style: none; display: grid; gap: 12px; }
+  .notes li { padding: 16px 20px; }
+  .notes li::before { content: "[+] "; color: var(--green); font-weight: 700; }
+
+  .warn {
+    margin-top: 28px; padding: 16px 20px; border-color: rgba(255,194,59,.5);
+    color: var(--amber); font-size: 14px;
+  }
+
+  footer {
+    text-align: center; padding: 40px 16px 60px; color: var(--muted); font-size: 13px;
+    border-top: 1px solid var(--border); background: rgba(0,0,0,.6);
+  }
+  footer a { color: var(--green); }
+
+  /* ---------- animations ---------- */
+  @keyframes blink { 50% { opacity: 0; } }
+  @keyframes pulse { 0%,100% { opacity: .6; transform: scale(1); } 50% { opacity: 1; transform: scale(1.08); } }
+  @keyframes flicker { 0%,100% { opacity: .9; } 47% { opacity: .9; } 48% { opacity: .55; } 49% { opacity: .95; } 72% { opacity: .75; } }
+  @keyframes glitchA {
+    0% { clip-path: inset(0 0 85% 0); transform: translate(-2px, 0); }
+    20% { clip-path: inset(40% 0 40% 0); transform: translate(2px, 0); }
+    40% { clip-path: inset(80% 0 5% 0); transform: translate(-1px, 0); }
+    60%,100% { clip-path: inset(100% 0 0 0); transform: none; }
+  }
+  @keyframes glitchB {
+    0% { clip-path: inset(70% 0 10% 0); transform: translate(2px, 0); }
+    25% { clip-path: inset(10% 0 75% 0); transform: translate(-2px, 0); }
+    50%,100% { clip-path: inset(100% 0 0 0); transform: none; }
+  }
+  .reveal { opacity: 0; transform: translateY(24px); transition: opacity .7s, transform .7s; }
+  .reveal.in { opacity: 1; transform: none; }
+
+  @media (max-width: 860px) {
+    .hero { padding-top: 24px; }
+    nav ul { display: none; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+    .reveal { opacity: 1; transform: none; }
+  }
+</style>
+</head>
+<body>
+
+<canvas id="rain" aria-hidden="true"></canvas>
+<div class="scanlines"></div>
+<div class="vignette"></div>
+
+<main>
+  <nav>
+    <a class="logo" href="#">wsa@root:~<span>_</span></a>
+    <ul>
+      <li><a href="#demo">./demo</a></li>
+      <li><a href="#checks">./checks</a></li>
+      <li><a href="#usage">./usage</a></li>
+      <li><a href="#design">./design</a></li>
+      <li><a href="https://github.com/Simonxy11/Web-Security-Auditor">./github</a></li>
+    </ul>
+  </nav>
+
+  <!-- ============ HERO ============ -->
+  <header class="hero">
+    <div>
+      <div class="tag">// OWASP TOP 10 (2021) · PASSIVE · ZERO DEPENDENCIES</div>
+      <h1>
+        <span class="glitch" data-text="Web Security">Web Security</span><br>
+        <span class="accent">Auditor</span>
+      </h1>
+      <p class="lede">
+        A Python tool that <b>passively audits</b> a web target's HTTP security posture —
+        headers, cookies, CORS and TLS — and produces a report mapped to the
+        <b>OWASP Top 10</b> with a concrete fix for every finding.
+      </p>
+      <div class="btns">
+        <a class="btn primary" href="https://github.com/Simonxy11/Web-Security-Auditor">View on GitHub</a>
+        <a class="btn ghost" href="#demo">&gt; Run demo</a>
+      </div>
+    </div>
+
+  </header>
+
+  <!-- ============ DEMO ============ -->
+  <section class="block reveal" id="demo">
+    <h2>live_demo</h2>
+    <p class="sub">Simulated run against a deliberately misconfigured local test server.</p>
+    <div class="panel">
+      <div class="term-bar">
+        <span class="dot" style="background:#ff5f57"></span>
+        <span class="dot" style="background:#febc2e"></span>
+        <span class="dot" style="background:#28c840"></span>
+        <span style="margin-left:10px">bash — audit.py</span>
+      </div>
+      <div class="term-body" id="term"></div>
+    </div>
+  </section>
+
+  <!-- ============ CHECKS ============ -->
+  <section class="block reveal" id="checks">
+    <h2>what_it_checks</h2>
+    <p class="sub">Every finding is mapped to an OWASP Top 10 (2021) category.</p>
+    <div class="grid">
+      <div class="card panel">
+        <span class="owasp">A05</span>
+        <h3>Response headers</h3>
+        <p>CSP, HSTS, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy.</p>
+      </div>
+      <div class="card panel">
+        <span class="owasp">A05</span>
+        <h3>Info disclosure</h3>
+        <p><code>Server</code>, <code>X-Powered-By</code> and framework version headers that leak your stack.</p>
+      </div>
+      <div class="card panel">
+        <span class="owasp">A01 · A02 · A05</span>
+        <h3>Cookies</h3>
+        <p>Missing <code>Secure</code>, <code>HttpOnly</code> and <code>SameSite</code> flags.</p>
+      </div>
+      <div class="card panel">
+        <span class="owasp">A01</span>
+        <h3>CORS</h3>
+        <p>Reflected origins with credentials and wildcard origins — broken access control.</p>
+      </div>
+      <div class="card panel">
+        <span class="owasp">A02</span>
+        <h3>Transport</h3>
+        <p>TLS version, certificate validity and expiry, and the HTTP → HTTPS redirect.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ USAGE ============ -->
+  <section class="block reveal" id="usage">
+    <h2>usage</h2>
+    <p class="sub">Standard library only. Nothing to install — just Python 3.</p>
+    <pre class="code panel"><span class="c"># clone it</span>
+<span class="p">$ </span>git clone https://github.com/Simonxy11/Web-Security-Auditor.git
+<span class="p">$ </span>cd Web-Security-Auditor
+
+<span class="c"># audit a target and print the report</span>
+<span class="p">$ </span>python3 audit.py https://your-site.example
+
+<span class="c"># save a Markdown report</span>
+<span class="p">$ </span>python3 audit.py http://localhost:3000 -o report.md
+
+<span class="c"># or JSON for pipelines</span>
+<span class="p">$ </span>python3 audit.py http://localhost:3000 --format json -o report.json</pre>
+    <div class="warn panel">⚠ Authorized use only. Run it against systems you own or have written permission to test (for example, a local OWASP Juice Shop container).</div>
+  </section>
+
+  <!-- ============ DESIGN ============ -->
+  <section class="block reveal" id="design">
+    <h2>design_notes</h2>
+    <p class="sub">Built to observe, not to attack.</p>
+    <ul class="notes">
+      <li class="panel">Passive only: one GET per check, no payloads, no brute forcing.</li>
+      <li class="panel">Redirects aren't followed, so the redirect itself can be inspected.</li>
+      <li class="panel">Findings are sorted by severity, each with an explanation and a concrete fix.</li>
+    </ul>
+  </section>
+
+  <footer>
+    <p>Web Security Auditor · built with Python ·
+      <a href="https://github.com/Simonxy11/Web-Security-Auditor">github.com/Simonxy11</a></p>
+  </footer>
+</main>
+
+<script>
+/* ===================== MOVING CODE BACKGROUND ===================== */
+(function () {
+  const canvas = document.getElementById('rain');
+  const ctx = canvas.getContext('2d');
+  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // Code that streams down each column
+  const CODE = [
+    'import ssl, socket, http.client',
+    'def check_headers(resp):',
+    'hsts = resp.getheader("Strict-Transport-Security")',
+    'if not csp: findings.append(Finding("HIGH", "A05"))',
+    'X-Frame-Options: DENY',
+    'Set-Cookie: session=; Secure; HttpOnly; SameSite=Lax',
+    'Access-Control-Allow-Origin: *',
+    'ctx = ssl.create_default_context()',
+    'cert = sock.getpeercert()',
+    'if days_left < 30: warn("cert expiring")',
+    'Content-Security-Policy: default-src \'self\'',
+    'X-Content-Type-Options: nosniff',
+    'Referrer-Policy: no-referrer',
+    'for f in sorted(findings, key=severity):',
+    'report.write(json.dumps(results, indent=2))',
+    'OWASP A01 A02 A05',
+    'GET / HTTP/1.1  Host: localhost:3000',
+    '0x7f 0x45 0x4c 0x46 01001011 11010010',
+    'return {"severity": sev, "fix": remedy}',
+    'TLSv1.3 ECDHE-RSA-AES256-GCM-SHA384',
+  ].join('   ');
+  const GLYPHS = 'ｱｲｳｴｵｶｷｸｹｺ01<>{}[]#$%&*+=/\\';
+
+  const fontSize = 16;
+  let cols, drops, offsets, speeds, dirs, rows, w, h;
+
+  // dir = 1 falls down, dir = -1 rises up
+  function startPos(dir) {
+    return dir === 1 ? Math.random() * -20 : rows + Math.random() * 20;
+  }
+
+  function resize() {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    w = window.innerWidth; h = window.innerHeight;
+    canvas.width = w * dpr; canvas.height = h * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    cols = Math.ceil(w / fontSize);
+    rows = Math.ceil(h / fontSize);
+    // alternate columns: down, up, down, up...
+    dirs = Array.from({ length: cols }, (_, i) => (i % 2 === 0 ? 1 : -1));
+    drops = dirs.map(d => d === 1 ? Math.random() * -rows : rows + Math.random() * rows);
+    offsets = Array.from({ length: cols }, () => Math.floor(Math.random() * CODE.length));
+    speeds = Array.from({ length: cols }, () => 0.35 + Math.random() * 0.75);
+    ctx.fillStyle = '#020403'; ctx.fillRect(0, 0, w, h);
+  }
+
+  function nextChar(i) {
+    // mostly real code characters, occasionally a random glyph for texture
+    if (Math.random() < 0.12) return GLYPHS[Math.floor(Math.random() * GLYPHS.length)];
+    const c = CODE[offsets[i] % CODE.length];
+    offsets[i]++;
+    return c === ' ' ? '·' : c;
+  }
+
+  function frame() {
+    ctx.fillStyle = 'rgba(2, 4, 3, 0.09)';   // trail fade
+    ctx.fillRect(0, 0, w, h);
+    ctx.font = `${fontSize}px "JetBrains Mono", monospace`;
+
+    for (let i = 0; i < cols; i++) {
+      const y = drops[i] * fontSize;
+      const ch = nextChar(i);
+      // bright leading character
+      ctx.fillStyle = '#d6ffe4';
+      ctx.shadowColor = '#00ff66'; ctx.shadowBlur = 8;
+      ctx.fillText(ch, i * fontSize, y);
+      // greener character just behind it (trailing opposite the direction of travel)
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = 'rgba(0, 255, 102, 0.75)';
+      ctx.fillText(nextChar(i), i * fontSize, y - fontSize * dirs[i]);
+
+      drops[i] += speeds[i] * dirs[i];
+      const offscreen = dirs[i] === 1 ? y > h : y < 0;
+      if (offscreen && Math.random() > 0.975) {
+        drops[i] = startPos(dirs[i]);
+        speeds[i] = 0.35 + Math.random() * 0.75;
+      }
+    }
+    if (!reduce) requestAnimationFrame(frame);
+  }
+
+  window.addEventListener('resize', resize);
+  resize();
+  if (reduce) { for (let k = 0; k < 120; k++) frame(); } else frame();
+})();
+
+/* ===================== TYPING TERMINAL ===================== */
+(function () {
+  const term = document.getElementById('term');
+  const lines = [
+    { t: '<span class="t-prompt">root@kali:~$</span> ', type: 'python3 audit.py http://localhost:3000 -o report.md' },
+    { t: '<span class="t-dim">[*] Target: http://localhost:3000</span>' },
+    { t: '<span class="t-dim">[*] Mode: passive · redirects not followed</span>' },
+    { t: '<span class="t-dim">[*] Checking response headers...</span>' },
+    { t: '<span class="t-high">[HIGH]  </span> CORS reflects arbitrary Origin with credentials   <span class="t-dim">A01</span>' },
+    { t: '<span class="t-med">[MEDIUM]</span> Content-Security-Policy header missing            <span class="t-dim">A05</span>' },
+    { t: '<span class="t-med">[MEDIUM]</span> Session cookie missing HttpOnly flag               <span class="t-dim">A05</span>' },
+    { t: '<span class="t-low">[LOW]   </span> Strict-Transport-Security not set                  <span class="t-dim">A05</span>' },
+    { t: '<span class="t-low">[LOW]   </span> X-Powered-By discloses: Express                    <span class="t-dim">A05</span>' },
+    { t: '<span class="t-low">[LOW]   </span> Cookie missing SameSite attribute                  <span class="t-dim">A01</span>' },
+    { t: '<span class="t-dim">    ... 3 more LOW findings</span>' },
+    { t: '' },
+    { t: '<span class="t-ok">[✓] Audit complete: 1 High · 2 Medium · 6 Low</span>' },
+    { t: '<span class="t-ok">[✓] Report written to report.md</span>' },
+  ];
+
+  let started = false;
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+  async function run() {
+    while (true) {
+      term.innerHTML = '';
+      for (const line of lines) {
+        const row = document.createElement('div');
+        row.innerHTML = line.t || '&nbsp;';
+        term.appendChild(row);
+        if (line.type) {
+          const span = document.createElement('span');
+          row.appendChild(span);
+          for (const ch of line.type) { span.textContent += ch; await sleep(45); }
+          await sleep(500);
+        } else {
+          await sleep(380);
+        }
+      }
+      const cur = document.createElement('div');
+      cur.innerHTML = '<span class="t-prompt">root@kali:~$</span> <span class="cursor"></span>';
+      term.appendChild(cur);
+      await sleep(6000);
+    }
+  }
+
+  const io = new IntersectionObserver(entries => {
+    entries.forEach(e => {
+      if (e.isIntersecting) {
+        e.target.classList.add('in');
+        if (e.target.id === 'demo' && !started) { started = true; run(); }
+      }
+    });
+  }, { threshold: 0.2 });
+  document.querySelectorAll('.reveal').forEach(el => io.observe(el));
+})();
+</script>
+</body>
+</html>
